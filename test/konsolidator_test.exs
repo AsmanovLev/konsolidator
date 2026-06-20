@@ -1,8 +1,10 @@
 defmodule KonsolidatorTest do
-  use ExUnit.Case
-  doctest Konsolidator
+  use ExUnit.Case, async: true
 
-  test "greets the world" do
-    assert Konsolidator.hello() == :world
+  alias Konsolidator.{Content, Button}
+
+  test "module loads and exposes core structs" do
+    assert %Content{} = Content.new()
+    assert %Button{} = Button.new("x", "y")
   end
 end

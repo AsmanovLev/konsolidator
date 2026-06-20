@@ -28,8 +28,4 @@ defmodule Konsolidator.MixProject do
       {:phoenix_pubsub, "~> 2.1"}
     ]
   end
-
-  defp description do
-    "Konsolidator — adapter-based multi-messenger routing library for Elixir."
-  end
 end
