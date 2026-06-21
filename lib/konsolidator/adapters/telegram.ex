@@ -106,7 +106,7 @@ defmodule Konsolidator.Adapters.Telegram do
       long_poll_timeout: Keyword.get(opts, :long_poll_timeout, @default_long_poll),
       allowed_updates: Keyword.get(opts, :allowed_updates, ["message", "callback_query"]),
       last_update_id: 0,
-      request_fn: Keyword.get(opts, :request_fn, fn _url, p -> Api.call(Keyword.fetch!(opts, :token), :get, p) end)
+      request_fn: Keyword.get(opts, :request_fn)
     }
     {:ok, state, {:continue, :start_poller}}
   end
@@ -148,7 +148,7 @@ defmodule Konsolidator.Adapters.Telegram do
         content.video -> send_video(state, user_id, content, params)
         content.audio -> send_audio(state, user_id, content, params)
         content.sticker -> send_sticker(state, user_id, content, params)
-        true -> Api.call(state.token, :send_message, params, state.request_fn)
+        true -> do_call(state, :send_message, params)
       end
 
     {:reply, unwrap_send(result), state}
@@ -164,7 +164,7 @@ defmodule Konsolidator.Adapters.Telegram do
         if(reply_markup, do: [reply_markup: reply_markup], else: [])
 
     reply =
-      case Api.call(state.token, :edit_message_text, params, state.request_fn) do
+      case do_call(state, :edit_message_text, params) do
         {:ok, _} -> :ok
         {:error, _} = err -> err
       end
@@ -174,7 +174,7 @@ defmodule Konsolidator.Adapters.Telegram do
 
   def handle_call({:delete, user_id, ref}, _from, state) do
     reply =
-      case Api.call(state.token, :delete_message, [chat_id: user_id, message_id: ref], state.request_fn) do
+      case do_call(state, :delete_message, [chat_id: user_id, message_id: ref]) do
         {:ok, _} -> :ok
         {:error, _} = err -> err
       end
@@ -184,7 +184,7 @@ defmodule Konsolidator.Adapters.Telegram do
 
   def handle_call({:typing, user_id, :on}, _from, state) do
     reply =
-      case Api.call(state.token, :send_chat_action, [chat_id: user_id, action: "typing"], state.request_fn) do
+      case do_call(state, :send_chat_action, [chat_id: user_id, action: "typing"]) do
         {:ok, _} -> :ok
         {:error, _} -> :ok
       end
@@ -204,13 +204,20 @@ defmodule Konsolidator.Adapters.Telegram do
         if(opts[:show_alert], do: [show_alert: true], else: [])
 
     reply =
-      case Api.call(state.token, :answer_callback_query, params, state.request_fn) do
+      case do_call(state, :answer_callback_query, params) do
         {:ok, _} -> :ok
         {:error, _} = err -> err
       end
 
     {:reply, reply, state}
   end
+
+  # Wrapper that uses either the injected request_fn (tests) or the default.
+  defp do_call(%{request_fn: nil, token: token}, method, params),
+    do: Api.call(token, method, params)
+
+  defp do_call(%{request_fn: f, token: token}, method, params),
+    do: Api.call(token, method, params, f)
 
   @impl true
   def handle_info({:update, update}, state) do
@@ -298,26 +305,26 @@ defmodule Konsolidator.Adapters.Telegram do
 
   defp send_file(state, _user_id, %Content{} = content, base_params) do
     params = base_params ++ [document: Api.file(content.file), caption: content.text || ""]
-    Api.call(state.token, :send_document, params, state.request_fn)
+    do_call(state, :send_document, params)
   end
 
   defp send_photo(state, _user_id, %Content{} = content, base_params) do
     params = base_params ++ [photo: Api.file(content.photo), caption: content.text || ""]
-    Api.call(state.token, :send_photo, params, state.request_fn)
+    do_call(state, :send_photo, params)
   end
 
   defp send_video(state, _user_id, %Content{} = content, base_params) do
     params = base_params ++ [video: Api.file(content.video), caption: content.text || ""]
-    Api.call(state.token, :send_video, params, state.request_fn)
+    do_call(state, :send_video, params)
   end
 
   defp send_audio(state, _user_id, %Content{} = content, base_params) do
     params = base_params ++ [audio: Api.file(content.audio), caption: content.text || ""]
-    Api.call(state.token, :send_audio, params, state.request_fn)
+    do_call(state, :send_audio, params)
   end
 
   defp send_sticker(state, user_id, %Content{} = content, _base_params) do
-    Api.call(state.token, :send_sticker, [chat_id: user_id, sticker: content.sticker], state.request_fn)
+    do_call(state, :send_sticker, [chat_id: user_id, sticker: content.sticker])
   end
 
   # Translate Telegram API responses to a single integer message_id ref.
