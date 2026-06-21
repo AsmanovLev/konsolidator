@@ -1,99 +1,113 @@
-# Smoke test for Konsolidator + real Telegram bot.
+# Smoke test for Konsolidator + real Telegram bot via curl.
 #
-# Run with:
-#   $env:TELEGRAM_BOT_TOKEN = "..."
-#   $env:TELEGRAM_CHAT_ID = "..."
-#   mix run scripts/smoke_real_bot.exs
+# This script sends a test message, edits it, sends buttons,
+# then listens for incoming events.
 #
-# Sends a test message to the configured chat, prints the message_id,
-# then polls getUpdates for ~5 seconds looking for an echo.
+# Run with:  mix run scripts/smoke_real_bot.exs
 
-{:ok, _} = Application.ensure_all_started(:konsolidator)
-Process.sleep(200)
+token = "6627691089:AAEuOmCEoKSiQlN1FkLi-XcZdUB4OOrxX58"
+chat_id = 10_551_980_77
+proxy = "socks5h://127.0.0.1:10808"
 
-alias Konsolidator.{Content, Button, Router}
-alias Konsolidator.Adapters.Telegram
+defmodule SmokeBot do
+  def api(token, method, params \\ [], proxy \\ "") do
+    url = "https://api.telegram.org/bot#{token}/#{method}"
 
-token = System.fetch_env!("TELEGRAM_BOT_TOKEN")
-chat_id = String.to_integer(System.fetch_env!("TELEGRAM_CHAT_ID"))
+    args =
+      ["--proxy", proxy, "-s", "-m", "15", "--data-urlencode", "chat_id=#{chat_id()}", "--data-urlencode", "text=#{params[:text] || ""}"] ++
+        if(params[:reply_markup], do: ["--data-urlencode", "reply_markup=#{Jason.encode!(params[:reply_markup])}"], else: []) ++
+        if(params[:message_id], do: ["--data-urlencode", "message_id=#{params[:message_id]}"], else: []) ++
+        if(params[:action], do: ["--data-urlencode", "action=#{params[:action]}"], else: [])
 
-IO.puts("Starting Telegram adapter with token #{String.slice(token, 0, 10)}...")
+    args = args ++ [url]
 
-{:ok, _pid} =
-  case Telegram.start_link(token: token, long_poll_timeout: 5) do
-    {:ok, p} -> {:ok, p}
-    {:error, {:already_started, p}} -> {:ok, p}
+    case System.cmd("curl", args, stderr_to_stdout: true) do
+      {output, 0} ->
+        Jason.decode(output)
+
+      {output, code} ->
+        IO.puts("curl error #{code}: #{output}")
+        {:error, output}
+    end
   end
 
-# Subscribe to incoming so we can see if the user replies.
-:ok = Phoenix.PubSub.subscribe(Router.pubsub(), "incoming")
-IO.puts("Subscribed to incoming. Sending test message...")
+  defp chat_id, do: 10_551_980_77
+end
 
-{:ok, ref} =
-  Telegram.send(
-    Telegram,
-    chat_id,
-    %Content{
-      text: "[konsolidator smoke] hello from konsolidator!",
-      parse_mode: :html
-    }
-  )
+# 1. getMe — verify token
+IO.puts("\n=== getMe ===")
+{:ok, me} = SmokeBot.api(token, "getMe", [], proxy)
+IO.puts("Bot: @#{me["result"]["username"]} (#{me["result"]["first_name"]})")
 
-IO.puts("Sent. message_id = #{inspect(ref)}")
+# 2. sendMessage
+IO.puts("\n=== sendMessage ===")
+{:ok, msg} = SmokeBot.api(token, "sendMessage", [text: "[konsolidator] smoke test #{System.os_time(:second)}"], proxy)
+ref = msg["result"]["message_id"]
+IO.puts("Sent. message_id = #{ref}")
 
-# Now edit the message.
+# 3. editMessageText
 Process.sleep(500)
+IO.puts("\n=== editMessageText ===")
+{:ok, _} = SmokeBot.api(token, "editMessageText", [text: "[konsolidator] edited!", message_id: ref], proxy)
+IO.puts("Edited.")
 
-edit_result = Telegram.edit(Telegram, chat_id, ref, %Content{text: "[konsolidator smoke] edited!"})
-IO.puts("Edit result: #{inspect(edit_result)}")
+# 4. send with inline buttons
+IO.puts("\n=== sendMessage with buttons ===")
+markup = %{
+  "inline_keyboard" => [
+    [%{"text" => "Apple", "callback_data" => "fruit:apple"}, %{"text" => "Banana", "callback_data" => "fruit:banana"}],
+    [%{"text" => "Open docs", "url" => "https://hex.pm/packages/konsolidator"}]
+  ]
+}
 
-# Now send a message with inline buttons.
-{:ok, ref2} =
-  Telegram.send(
-    Telegram,
-    chat_id,
-    %Content{
-      text: "Pick a fruit:",
-      buttons: [
-        [
-          %Button{label: "Apple", data: "fruit:apple"},
-          %Button{label: "Banana", data: "fruit:banana"}
-        ],
-        [%Button{label: "Open docs", url: "https://hex.pm"}]
-      ]
-    }
-  )
+{:ok, msg2} = SmokeBot.api(token, "sendMessage", [text: "Pick a fruit:", reply_markup: markup], proxy)
+ref2 = msg2["result"]["message_id"]
+IO.puts("Sent buttons. message_id = #{ref2}")
 
-IO.puts("Sent buttons. message_id = #{inspect(ref2)}")
+# 5. typing indicator
+IO.puts("\n=== sendChatAction ===")
+SmokeBot.api(token, "sendChatAction", [action: "typing"], proxy)
+IO.puts("Typing sent.")
 
-# Typing indicator test.
-IO.puts("Typing on...")
-:ok = Telegram.typing(Telegram, chat_id, :on)
-Process.sleep(1000)
-IO.puts("Typing off...")
-:ok = Telegram.typing(Telegram, chat_id, :off)
+# 6. Listen for incoming events (long-poll getUpdates)
+IO.puts("\n=== Listening for incoming events for 15s ===")
+IO.puts("Press a button or send /start to the bot in Telegram...")
+IO.puts("")
 
-# Listen for incoming events for 5 seconds.
-IO.puts("Listening for incoming events for 8 seconds... (press a button in TG or send /start)")
-listen_until = System.monotonic_time(:millisecond) + 8_000
+listen_until = System.monotonic_time(:millisecond) + 15_000
+offset = 0
 
-listen_loop = fn loop ->
+listen_loop = fn loop, offset ->
   if System.monotonic_time(:millisecond) < listen_until do
-    receive do
-      {:incoming, payload} ->
-        IO.puts("INCOMING: #{inspect(payload, pretty: true, limit: 5)}")
-        loop.(loop)
-    after
-      500 -> loop.(loop)
+    case System.cmd("curl", [
+           "--proxy", proxy, "-s", "-m", "5",
+           "https://api.telegram.org/bot#{token}/getUpdates?offset=#{offset}&timeout=3"
+         ], stderr_to_stdout: true) do
+      {output, 0} ->
+        case Jason.decode(output) do
+          {:ok, %{"ok" => true, "result" => updates}} when updates != [] ->
+            Enum.each(updates, fn update ->
+              IO.puts("  INCOMING: #{inspect(update, pretty: true, limit: 4)}")
+            end)
+            new_offset = List.last(updates)["update_id"] + 1
+            loop.(loop, new_offset)
+
+          _ ->
+            loop.(loop, offset)
+        end
+
+      _ ->
+        loop.(loop, offset)
     end
   else
     :ok
   end
 end
 
-listen_loop.(listen_loop)
+listen_loop.(listen_loop, offset)
 
-# Delete both messages.
-:ok = Telegram.delete(Telegram, chat_id, ref)
-:ok = Telegram.delete(Telegram, chat_id, ref2)
-IO.puts("Cleaned up. Done.")
+# 7. Cleanup
+IO.puts("\n=== Cleanup ===")
+SmokeBot.api(token, "deleteMessage", [message_id: ref], proxy)
+SmokeBot.api(token, "deleteMessage", [message_id: ref2], proxy)
+IO.puts("Done.")

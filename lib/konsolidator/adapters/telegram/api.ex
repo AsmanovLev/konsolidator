@@ -90,10 +90,22 @@ defmodule Konsolidator.Adapters.Telegram.Api do
 
   # Default request function. Encodes params as multipart form-data if any
   # param value is a binary path that exists on disk, otherwise as JSON body.
+  # When :konsolidator, :proxy is set (e.g. "socks5h://127.0.0.1:10808"),
+  # uses :httpc with SOCKS5 support instead of Req.
   defp default_post(url, params) do
     has_file =
       Enum.any?(params, fn {_, v} -> is_binary(v) and File.regular?(v) end)
 
+    proxy = Application.get_env(:konsolidator, :proxy, "")
+
+    if proxy != "" do
+      httpc_post(url, params, has_file, proxy)
+    else
+      req_post(url, params, has_file)
+    end
+  end
+
+  defp req_post(url, params, has_file) do
     req_opts =
       if has_file do
         [form: params]
@@ -107,6 +119,81 @@ defmodule Konsolidator.Adapters.Telegram.Api do
       {:ok, %Req.Response{body: body}} -> {:ok, body || %{"ok" => false}}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  # :httpc with SOCK5 proxy via socks5:// connect tunnel.
+  defp httpc_post(url, params, has_file, proxy) do
+    {proxy_host, proxy_port} = parse_socks_url(proxy)
+
+    body =
+      if has_file do
+        encode_multipart(params)
+      else
+        Jason.encode!(Map.new(params))
+      end
+
+    content_type = if has_file, do: ~c"multipart/form-data", else: ~c"application/json"
+
+    http_options = [
+      {:timeout, 30_000},
+      {:connect_timeout, 10_000},
+      {:socket_opts, [{:socks5, {proxy_host, proxy_port}}]}
+    ]
+
+    request = {String.to_charlist(url), [], content_type, body}
+
+    case :httpc.request(:post, request, http_options, [body_format: :binary]) do
+      {:ok, {{_, status, _}, _headers, resp_body}} when status in 200..299 ->
+        case Jason.decode(resp_body) do
+          {:ok, map} -> {:ok, map}
+          _ -> {:error, {:decode_error, resp_body}}
+        end
+
+      {:ok, {{_, status, _}, _headers, resp_body}} ->
+        case Jason.decode(resp_body) do
+          {:ok, map} -> {:error, map}
+          _ -> {:error, {:http, status, resp_body}}
+        end
+
+      {:error, reason} ->
+        {:error, {:http, :transport, reason}}
+    end
+  end
+
+  defp parse_socks_url(url) do
+    url
+    |> String.replace("socks5h://", "")
+    |> String.replace("socks5://", "")
+    |> String.split(":")
+    |> then(fn [host, port] -> {String.to_charlist(host), String.to_integer(port)} end)
+  end
+
+  defp encode_multipart(params) do
+    boundary = "boundary#{System.unique_integer([:positive])}"
+
+    parts =
+      Enum.map(params, fn {key, value} ->
+        if is_binary(value) and File.regular?(value) do
+          content = File.read!(value) |> elem(1)
+          """
+          --#{boundary}\r
+          Content-Disposition: form-data; name="#{key}"; filename="#{Path.basename(value)}"\r
+          Content-Type: application/octet-stream\r
+          \r
+          #{content}\r
+          """
+        else
+          """
+          --#{boundary}\r
+          Content-Disposition: form-data; name="#{key}"\r
+          \r
+          #{value}\r
+          """
+        end
+      end)
+
+    (parts ++ ["--#{boundary}--\r"])
+    |> Enum.join("\r")
   end
 
   @doc """
