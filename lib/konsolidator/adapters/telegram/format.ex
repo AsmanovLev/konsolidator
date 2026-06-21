@@ -32,6 +32,9 @@ defmodule Konsolidator.Adapters.Telegram.Format do
         :html -> {text, "HTML"}
         :markdown -> {markdown_to_html(text), "HTML"}
         :plain -> {escape_html(text), "HTML"}
+        :text -> {text, nil}
+        nil -> {text, nil}
+        _ -> {text, nil}
       end
 
     opts = [parse_mode: mode, disable_web_page_preview: true, disable_notification: content.silent]
