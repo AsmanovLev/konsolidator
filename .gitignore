@@ -1,0 +1,30 @@
+# Build output
+/_build/
+/cover/
+/deps/
+/doc/
+/.fetch
+erl_crash.dump
+erl_crash.dump.*
+
+# Generated artifacts
+*.beam
+*.o
+*.so
+
+# Environment files with secrets
+.env
+.env.local
+
+# Logs
+*.log
+/log/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
