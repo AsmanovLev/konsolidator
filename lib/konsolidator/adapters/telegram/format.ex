@@ -37,7 +37,8 @@ defmodule Konsolidator.Adapters.Telegram.Format do
         _ -> {text, nil}
       end
 
-    opts = [parse_mode: mode, disable_web_page_preview: true, disable_notification: content.silent]
+    opts = [disable_web_page_preview: true, disable_notification: content.silent]
+    opts = if mode, do: Keyword.put(opts, :parse_mode, mode), else: opts
 
     opts =
       opts
