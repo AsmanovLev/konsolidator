@@ -34,8 +34,8 @@ defmodule Konsolidator.Adapters.Telegram.Poller do
 
   @impl true
   def handle_info(:poll, state) do
-    do_poll(state)
-    {:noreply, state}
+    new_state = do_poll(state)
+    {:noreply, new_state}
   end
 
   @impl true
