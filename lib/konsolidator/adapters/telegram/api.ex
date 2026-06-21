@@ -152,21 +152,32 @@ defmodule Konsolidator.Adapters.Telegram.Api do
     json_body = Jason.encode!(Map.new(params, fn {k, v} -> {k, v} end))
 
     args =
-      ["--proxy", "socks5h://#{proxy_host}:#{proxy_port}",
-       "-s", "-m", "15",
-       "-H", "Content-Type: application/json",
-       "-d", json_body,
-       url]
+       ["--proxy", "socks5h://#{proxy_host}:#{proxy_port}",
+        "-s", "-m", "35",
+        "-H", "Content-Type: application/json",
+        "-d", json_body,
+        url]
 
-    case System.cmd("curl", args, stderr_to_stdout: true) do
-      {output, 0} ->
+    case safe_curl(args) do
+      {:ok, output} ->
         case Jason.decode(output) do
           {:ok, map} -> {:ok, map}
           _ -> {:error, {:decode_error, output}}
         end
 
-      {output, code} ->
-        {:error, {:curl_error, code, output}}
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp safe_curl(args) do
+    try do
+      case System.cmd("curl", args, stderr_to_stdout: true) do
+        {output, 0} -> {:ok, output}
+        {output, code} -> {:error, {:curl_error, code, output}}
+      end
+    rescue
+      e in ErlangError -> {:error, {:curl_not_found, e.reason}}
     end
   end
 
