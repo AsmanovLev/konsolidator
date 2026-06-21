@@ -33,7 +33,7 @@ defmodule Konsolidator.Adapters.Telegram.ApiTest do
 
   test "base_url/2 builds the expected URL" do
     assert Api.base_url("12345:ABC", :send_message) ==
-             "https://api.telegram.org/bot12345:ABC/send_message"
+             "https://api.telegram.org/bot12345:ABC/sendMessage"
   end
 
   test "file/1 returns the path unchanged (Req handles multipart upload)" do

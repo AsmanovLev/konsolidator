@@ -38,12 +38,33 @@ defmodule Konsolidator.Adapters.Telegram.Api do
 
   @type opts :: keyword()
 
+  @method_names %{
+    send_message: "sendMessage",
+    edit_message_text: "editMessageText",
+    delete_message: "deleteMessage",
+    send_chat_action: "sendChatAction",
+    answer_callback_query: "answerCallbackQuery",
+    send_photo: "sendPhoto",
+    send_document: "sendDocument",
+    send_video: "sendVideo",
+    send_audio: "sendAudio",
+    send_voice: "sendVoice",
+    send_sticker: "sendSticker",
+    get_updates: "getUpdates",
+    get_me: "getMe"
+  }
+
   @doc """
   Base URL for the Telegram Bot API: `https://api.telegram.org/bot<TOKEN>/<method>`.
   """
   @spec base_url(String.t(), method()) :: String.t()
   def base_url(token, method) do
-    "https://api.telegram.org/bot#{token}/#{method}"
+    "https://api.telegram.org/bot#{token}/#{method_name(method)}"
+  end
+
+  @spec method_name(method()) :: String.t()
+  def method_name(method) do
+    @method_names[method] || Atom.to_string(method)
   end
 
   @doc """
@@ -121,42 +142,31 @@ defmodule Konsolidator.Adapters.Telegram.Api do
     end
   end
 
-  # :httpc with SOCK5 proxy via socks5:// connect tunnel.
-  defp httpc_post(url, params, has_file, proxy) do
-    {proxy_host, proxy_port} = parse_socks_url(proxy)
+  # For SOCKS5 proxy, use curl as subprocess. :httpc is broken on OTP 29
+  # (missing :http_util.timestamp/0). curl handles SOCKS natively.
+  defp httpc_post(url, params, _has_file, proxy) do
+    {_, proxy_port} = parse_socks_url(proxy)
+    proxy_host = proxy |> String.replace("socks5h://", "") |> String.replace("socks5://", "") |> String.split(":") |> hd()
 
-    body =
-      if has_file do
-        encode_multipart(params)
-      else
-        Jason.encode!(Map.new(params))
-      end
+    # Telegram API accepts JSON body for POST. Encode everything as JSON.
+    json_body = Jason.encode!(Map.new(params, fn {k, v} -> {k, v} end))
 
-    content_type = if has_file, do: ~c"multipart/form-data", else: ~c"application/json"
+    args =
+      ["--proxy", "socks5h://#{proxy_host}:#{proxy_port}",
+       "-s", "-m", "15",
+       "-H", "Content-Type: application/json",
+       "-d", json_body,
+       url]
 
-    http_options = [
-      {:timeout, 30_000},
-      {:connect_timeout, 10_000},
-      {:socket_opts, [{:socks5, {proxy_host, proxy_port}}]}
-    ]
-
-    request = {String.to_charlist(url), [], content_type, body}
-
-    case :httpc.request(:post, request, http_options, [body_format: :binary]) do
-      {:ok, {{_, status, _}, _headers, resp_body}} when status in 200..299 ->
-        case Jason.decode(resp_body) do
+    case System.cmd("curl", args, stderr_to_stdout: true) do
+      {output, 0} ->
+        case Jason.decode(output) do
           {:ok, map} -> {:ok, map}
-          _ -> {:error, {:decode_error, resp_body}}
+          _ -> {:error, {:decode_error, output}}
         end
 
-      {:ok, {{_, status, _}, _headers, resp_body}} ->
-        case Jason.decode(resp_body) do
-          {:ok, map} -> {:error, map}
-          _ -> {:error, {:http, status, resp_body}}
-        end
-
-      {:error, reason} ->
-        {:error, {:http, :transport, reason}}
+      {output, code} ->
+        {:error, {:curl_error, code, output}}
     end
   end
 
@@ -166,34 +176,6 @@ defmodule Konsolidator.Adapters.Telegram.Api do
     |> String.replace("socks5://", "")
     |> String.split(":")
     |> then(fn [host, port] -> {String.to_charlist(host), String.to_integer(port)} end)
-  end
-
-  defp encode_multipart(params) do
-    boundary = "boundary#{System.unique_integer([:positive])}"
-
-    parts =
-      Enum.map(params, fn {key, value} ->
-        if is_binary(value) and File.regular?(value) do
-          content = File.read!(value) |> elem(1)
-          """
-          --#{boundary}\r
-          Content-Disposition: form-data; name="#{key}"; filename="#{Path.basename(value)}"\r
-          Content-Type: application/octet-stream\r
-          \r
-          #{content}\r
-          """
-        else
-          """
-          --#{boundary}\r
-          Content-Disposition: form-data; name="#{key}"\r
-          \r
-          #{value}\r
-          """
-        end
-      end)
-
-    (parts ++ ["--#{boundary}--\r"])
-    |> Enum.join("\r")
   end
 
   @doc """

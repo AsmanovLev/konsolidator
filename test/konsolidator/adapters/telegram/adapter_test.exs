@@ -34,7 +34,7 @@ defmodule Konsolidator.Adapters.Telegram.AdapterTest do
     assert {:ok, 12345} = Telegram.send(Telegram, 42, Content.new(text: "hi"))
 
     [{url, params}] = :ets.tab2list(cap)
-    assert url == "https://api.telegram.org/botTEST_TOKEN/send_message"
+    assert url == "https://api.telegram.org/botTEST_TOKEN/sendMessage"
     assert {_, 42} = List.keyfind(params, :chat_id, 0)
     assert {_, "hi"} = List.keyfind(params, :text, 0)
   end
@@ -71,7 +71,7 @@ defmodule Konsolidator.Adapters.Telegram.AdapterTest do
     assert :ok = Telegram.edit(Telegram, 42, 999, content)
 
     [{url, params}] = :ets.tab2list(cap)
-    assert url =~ "edit_message_text"
+    assert url =~ "editMessageText"
     assert {_, 999} = List.keyfind(params, :message_id, 0)
   end
 
@@ -79,7 +79,7 @@ defmodule Konsolidator.Adapters.Telegram.AdapterTest do
     :ets.delete_all_objects(cap)
     assert :ok = Telegram.delete(Telegram, 42, 999)
     [{url, params}] = :ets.tab2list(cap)
-    assert url =~ "delete_message"
+    assert url =~ "deleteMessage"
     assert {_, 999} = List.keyfind(params, :message_id, 0)
   end
 
@@ -87,7 +87,7 @@ defmodule Konsolidator.Adapters.Telegram.AdapterTest do
     :ets.delete_all_objects(cap)
     assert :ok = Telegram.typing(Telegram, 42, :on)
     [{url, params}] = :ets.tab2list(cap)
-    assert url =~ "send_chat_action"
+    assert url =~ "sendChatAction"
     assert {_, "typing"} = List.keyfind(params, :action, 0)
   end
 
@@ -103,12 +103,12 @@ defmodule Konsolidator.Adapters.Telegram.AdapterTest do
 
   defp pick_response(url, _params) do
     cond do
-      String.contains?(url, "send_message") -> send_message_response()
-      String.contains?(url, "edit_message_text") -> edit_message_response()
-      String.contains?(url, "delete_message") -> delete_message_response()
-      String.contains?(url, "send_chat_action") -> %{"ok" => true, "result" => true}
-      String.contains?(url, "answer_callback_query") -> %{"ok" => true, "result" => true}
-      String.contains?(url, "get_updates") -> %{"ok" => true, "result" => []}
+      String.contains?(url, "sendMessage") -> send_message_response()
+      String.contains?(url, "editMessageText") -> edit_message_response()
+      String.contains?(url, "deleteMessage") -> delete_message_response()
+      String.contains?(url, "sendChatAction") -> %{"ok" => true, "result" => true}
+      String.contains?(url, "answerCallbackQuery") -> %{"ok" => true, "result" => true}
+      String.contains?(url, "getUpdates") -> %{"ok" => true, "result" => []}
       true -> %{"ok" => true, "result" => nil}
     end
   end
