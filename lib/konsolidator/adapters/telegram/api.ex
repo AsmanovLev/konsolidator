@@ -144,29 +144,36 @@ defmodule Konsolidator.Adapters.Telegram.Api do
 
   # For SOCKS5 proxy, use curl as subprocess. :httpc is broken on OTP 29
   # (missing :http_util.timestamp/0). curl handles SOCKS natively.
+  # We write the JSON body to a temp file and use --data-binary @file
+  # because Windows System.cmd corrupts non-ASCII (emojis) on the command line.
   defp httpc_post(url, params, _has_file, proxy) do
     {_, proxy_port} = parse_socks_url(proxy)
     proxy_host = proxy |> String.replace("socks5h://", "") |> String.replace("socks5://", "") |> String.split(":") |> hd()
 
-    # Telegram API accepts JSON body for POST. Encode everything as JSON.
     json_body = Jason.encode!(Map.new(params, fn {k, v} -> {k, v} end))
+    tmp = Path.join(System.tmp_dir!(), "konsolidator_#{System.unique_integer([:positive])}.json")
+    File.write!(tmp, json_body)
 
     args =
        ["--proxy", "socks5h://#{proxy_host}:#{proxy_port}",
         "-s", "-m", "35",
         "-H", "Content-Type: application/json",
-        "-d", json_body,
+        "--data-binary", "@" <> tmp,
         url]
 
-    case safe_curl(args) do
-      {:ok, output} ->
-        case Jason.decode(output) do
-          {:ok, map} -> {:ok, map}
-          _ -> {:error, {:decode_error, output}}
-        end
+    try do
+      case safe_curl(args) do
+        {:ok, output} ->
+          case Jason.decode(output) do
+            {:ok, map} -> {:ok, map}
+            _ -> {:error, {:decode_error, output}}
+          end
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
+    after
+      File.rm(tmp)
     end
   end
 
