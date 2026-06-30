@@ -14,7 +14,6 @@ defmodule Konsolidator.Adapters.Discord.WS do
       :ok = Discord.WS.close(ws)
   """
 
-  require Logger
   import Bitwise
 
   @handshake_key Base.encode64(:crypto.strong_rand_bytes(16))

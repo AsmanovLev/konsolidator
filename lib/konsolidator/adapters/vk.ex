@@ -13,7 +13,7 @@ defmodule Konsolidator.Adapters.VK do
   use GenServer
   require Logger
 
-  alias Konsolidator.{Content, Router}
+  alias Konsolidator.{Router}
 
   @behaviour Konsolidator.Adapter
 
@@ -165,7 +165,7 @@ defmodule Konsolidator.Adapters.VK do
   defp handle_update(_other, _state), do: :ok
 
   defp build_keyboard(nil), do: nil
-  defp build_keyboard(rows) do
+  defp build_keyboard(rows) when is_list(rows) do
     %{"one_time" => false, "buttons" => Enum.map(rows, fn row ->
       Enum.map(row, fn btn ->
         if btn.url do
