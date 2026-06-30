@@ -15,6 +15,7 @@ defmodule Konsolidator.Adapters.Discord.WS do
   """
 
   require Logger
+  import Bitwise
 
   @handshake_key Base.encode64(:crypto.strong_rand_bytes(16))
   @type t :: %__MODULE__{socket: :ssl.sslsocket(), buffer: binary()}
@@ -176,7 +177,8 @@ defmodule Konsolidator.Adapters.Discord.WS do
             {"", mask_key_rest}
           end
         if byte_size(payload_rest) >= payload_len do
-          <<payload::binary-size(payload_len), remaining::binary>> = payload_rest
+          payload_len_pinned = payload_len
+          <<payload::binary-size(^payload_len_pinned), remaining::binary>> = payload_rest
           final_payload = if masked, do: mask(payload, mask_key), else: payload
           {:ok, opcode, final_payload, remaining}
         else
