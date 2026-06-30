@@ -51,14 +51,15 @@ mix run         # boot the application
 
 ## Adapters
 
-| Backend  | Status      | Notes                          |
-|----------|-------------|--------------------------------|
-| Telegram | ✅ Stable   | Long-poll, SOCKS5 via curl     |
-| Discord  | 🚧 Planned  |                                |
-| VK       | 🚧 Planned  |                                |
-| MAX      | 🚧 Planned  |                                |
-| Matrix   | 🚧 Planned  |                                |
-| Slack    | 🚧 Planned  |                                |
+| Backend  | Status           | Notes                                      |
+|----------|------------------|--------------------------------------------|
+| Telegram | ✅ Stable        | Long-poll, SOCKS5 via curl                 |
+| Discord  | ✅ Implemented   | Gateway WebSocket v10, REST API v10        |
+| VK       | ✅ Implemented   | Bots Long Poll API v5.131                  |
+| MAX      | ✅ Implemented   | HTTP long-poll `/updates`, REST API        |
+| Matrix   | ✅ Implemented   | Client-Server API `/sync` long-poll        |
+| IRC      | ✅ Implemented   | Plain TCP or TLS, `:gen_tcp` / `:ssl`      |
+| Slack    | 🚧 Planned       |                                            |
 
 ## License
 

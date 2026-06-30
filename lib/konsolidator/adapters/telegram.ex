@@ -96,6 +96,11 @@ defmodule Konsolidator.Adapters.Telegram do
     GenServer.call(adapter, {:answer_callback, callback_id, opts}, 5_000)
   end
 
+  @doc "Platform-specific: pin a message."
+  def pin_message(adapter, chat_id, message_id) do
+    GenServer.call(adapter, {:pin_message, chat_id, message_id}, 10_000)
+  end
+
   ## GenServer
 
   @impl true
@@ -182,6 +187,7 @@ defmodule Konsolidator.Adapters.Telegram do
     {:reply, reply, state}
   end
 
+  @impl true
   def handle_call({:typing, user_id, :on}, _from, state) do
     reply =
       case do_call(state, :send_chat_action, [chat_id: user_id, action: "typing"]) do
@@ -195,6 +201,15 @@ defmodule Konsolidator.Adapters.Telegram do
   def handle_call({:typing, _user_id, :off}, _from, state) do
     # Telegram has no "stop typing" action. The chat action expires after 5s.
     {:reply, :ok, state}
+  end
+
+  def handle_call({:pin_message, chat_id, message_id}, _from, state) do
+    reply =
+      case do_call(state, :pin_chat_message, [chat_id: chat_id, message_id: message_id]) do
+        {:ok, _} -> :ok
+        {:error, _} = err -> err
+      end
+    {:reply, reply, state}
   end
 
   def handle_call({:answer_callback, callback_id, opts}, _from, state) do
